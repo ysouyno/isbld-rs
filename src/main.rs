@@ -110,6 +110,8 @@ fn get_param() -> std::io::Result<Param> {
     Ok(param)
 }
 
+// Error: The network name cannot be found, see:
+// https://stackoverflow.com/questions/44757893/cmd-c-doesnt-work-in-rust-when-command-includes-spaces
 fn run_cmd(command: &str) -> Result<(), Error> {
     println!("run: {}", command);
     let command_vec: Vec<String> = command.split_whitespace().map(str::to_string).collect();
