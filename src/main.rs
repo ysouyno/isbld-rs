@@ -1,11 +1,13 @@
-use std::io::{BufRead, BufReader, Error, ErrorKind};
-use std::process::{Command, Stdio};
+use std::io::Error;
+// use std::io::{BufRead, BufReader, Error, ErrorKind};
+// use std::process::{Command, Stdio};
 
 extern crate serde;
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::io::Read;
 use std::io::Write;
+use winapi::um::processthreadsapi;
 
 #[derive(Serialize, Deserialize)]
 struct Data {
@@ -110,11 +112,20 @@ fn get_param() -> std::io::Result<Param> {
     Ok(param)
 }
 
+fn to_wstring(value: &str) -> Vec<u16> {
+    use std::os::windows::ffi::OsStrExt;
+
+    std::ffi::OsStr::new(value)
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect()
+}
+
 // Error: The network name cannot be found, see:
 // https://stackoverflow.com/questions/44757893/cmd-c-doesnt-work-in-rust-when-command-includes-spaces
 fn run_cmd(command: &str) -> Result<(), Error> {
     println!("run: {}", command);
-    let command_vec: Vec<String> = command.split_whitespace().map(str::to_string).collect();
+    /*let command_vec: Vec<String> = command.split_whitespace().map(str::to_string).collect();
     let stdout = Command::new("CMD")
         // first of all you should exec `chcp 65001`
         .arg("/C")
@@ -128,7 +139,56 @@ fn run_cmd(command: &str) -> Result<(), Error> {
     reader
         .lines()
         .filter_map(|line| line.ok())
-        .for_each(|line| println!("{}", line));
+        .for_each(|line| println!("{}", line));*/
+
+    unsafe {
+        let mut pi = processthreadsapi::PROCESS_INFORMATION {
+            hProcess: std::ptr::null_mut(),
+            hThread: std::ptr::null_mut(),
+            dwProcessId: 0 as _,
+            dwThreadId: 0 as _,
+        };
+
+        let mut si = processthreadsapi::STARTUPINFOW {
+            cb: std::mem::size_of::<processthreadsapi::STARTUPINFOW>() as _,
+            lpReserved: std::ptr::null_mut(),
+            lpDesktop: std::ptr::null_mut(),
+            lpTitle: std::ptr::null_mut(),
+            dwX: 0 as _,
+            dwY: 0 as _,
+            dwXSize: 0 as _,
+            dwYSize: 0 as _,
+            dwXCountChars: 0 as _,
+            dwYCountChars: 0 as _,
+            dwFillAttribute: 0 as _,
+            dwFlags: 0 as _,
+            wShowWindow: 0 as _,
+            cbReserved2: 0 as _,
+            lpReserved2: std::ptr::null_mut(),
+            hStdInput: std::ptr::null_mut(),
+            hStdOutput: std::ptr::null_mut(),
+            hStdError: std::ptr::null_mut(),
+        };
+
+        let ret = processthreadsapi::CreateProcessW(
+            std::ptr::null_mut(),
+            to_wstring(command).as_mut_ptr(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            winapi::shared::minwindef::FALSE,
+            0,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            &mut si,
+            &mut pi,
+        );
+
+        if ret == 0 {
+            println!("error: {}", winapi::um::errhandlingapi::GetLastError());
+        } else {
+            println!("succeeded");
+        }
+    }
 
     Ok(())
 }
@@ -137,7 +197,7 @@ fn build(param: Param) -> Result<(), Error> {
     // let chcp_cmd = "chcp 65001".to_owned();
     // run_cmd(chcp_cmd.as_str()).unwrap();
     let compile_cmd = format!(
-        "\"\"{}\" \"{}\" {} {} -I\"{}\" -I\"{}\" -I\"{}\" {} {}\"",
+        "\"{}\" \"{}\" {} {} -I\"{}\" -I\"{}\" -I\"{}\" {} {}",
         param.compiler.as_str(),
         param.rulfiles.as_str(),
         param.libraries.as_str(),
@@ -150,7 +210,7 @@ fn build(param: Param) -> Result<(), Error> {
     );
     run_cmd(compile_cmd.as_str()).unwrap();
     let build_cmd = format!(
-        "\"\"{}\" -p \"{}\"\"",
+        "\"{}\" -p \"{}\"",
         param.builder.as_str(),
         param.installproject.as_str()
     );
